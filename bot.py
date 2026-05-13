@@ -1,29 +1,17 @@
 """
-Asosiy bot fayli — barcha handlerlarni birlashtiradi.
-Token: 8543327422:AAGFDfNexdoqe5UTDnCI4NzIlSsYyITiJMU
-Admin ID: 1959567617
+Asosiy bot fayli — Webhook rejimi (Render uchun moslangan)
 """
 
 import logging
 import os
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s — %(message)s",
-)
-logger = logging.getLogger(__name__)
-
-# Token va Admin ID hardcode
-BOT_TOKEN = "8543327422:AAGmnW9mTBsMUsQD1pw8j4iwsh9vY3ms8_E"
-os.environ.setdefault("ADMIN_ID", "1959567617")
-os.environ.setdefault("ADMIN_IDS", "1959567617")
-
+import asyncio
 from telegram import BotCommand
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, PollAnswerHandler, filters,
 )
 
+# Handlerlarni import qilish
 from database import init_db
 from user_handlers import (
     cmd_start, cmd_surveys, cmd_about, cmd_survey_link,
@@ -42,9 +30,20 @@ from admin_handlers import (
     cb_adm_edit_questions, cb_adm_del_question,
     handle_admin_menu,
     build_create_conv, build_add_admin_conv,
-    ADMIN_MAIN_KB,
 )
 
+# Logging sozlamalari
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Muhit o'zgaruvchilari (Render Environment Variables dan olinadi)
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8543327422:AAGmnW9mTBsMUsQD1pw8j4iwsh9vY3ms8_E")
+ADMIN_ID = os.getenv("ADMIN_ID", "1959567617")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Masalan: https://sizning-botingiz.onrender.com
+PORT = int(os.getenv("PORT", 8443))
 
 async def post_init(app: Application):
     await init_db()
@@ -59,8 +58,11 @@ async def post_init(app: Application):
     ])
     logger.info("✅ Bot buyruqlari sozlandi.")
 
-
 def main():
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN topilmadi!")
+        return
+
     app = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -68,7 +70,7 @@ def main():
         .build()
     )
 
-    # ── 1. ConversationHandlers (eng yuqori ustuvorlik) ──
+    # ── 1. ConversationHandlers ──
     app.add_handler(build_create_conv())
     app.add_handler(build_add_admin_conv())
 
@@ -108,7 +110,7 @@ def main():
     app.add_handler(CallbackQueryHandler(cb_adm_ai,          pattern=r"^adm_ai:\d+:(fast|deep)$"))
     app.add_handler(CallbackQueryHandler(cb_adm_ai_show,     pattern=r"^adm_ai_show:\d+$"))
     app.add_handler(CallbackQueryHandler(cb_adm_del_confirm, pattern=r"^adm_del_confirm:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_del_yes,     pattern=r"^adm_del_yes:\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_adm_del_yes,      pattern=r"^adm_del_yes:\d+$"))
     app.add_handler(CallbackQueryHandler(cb_adm_stats,       pattern=r"^adm_stats$"))
 
     # ── 9. Test yuborish callback-lar ──
@@ -127,15 +129,25 @@ def main():
         handle_admin_menu,
     ))
 
-    # ── 12. Yozma javoblar (survey text questions) ──
+    # ── 12. Yozma javoblar ──
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_text_answer,
     ))
 
-    logger.info("🚀 Bot ishga tushmoqda...")
-    app.run_polling(drop_pending_updates=True)
-
+    # ── Webhook yoki Polling ──
+    if WEBHOOK_URL:
+        logger.info(f"🌐 Webhook ishga tushmoqda: {WEBHOOK_URL} Port: {PORT}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
+            drop_pending_updates=True
+        )
+    else:
+        logger.info("🔄 Polling rejimida ishga tushmoqda...")
+        app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
