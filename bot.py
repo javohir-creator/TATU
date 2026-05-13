@@ -1,31 +1,14 @@
-"""
-Asosiy bot fayli — Render uchun Webhook rejimi.
-Fayl nomi: main.py
-"""
-
 import logging
 import os
 import sys
+import asyncio
 from telegram import BotCommand
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, PollAnswerHandler, filters,
 )
 
-# Muhit o'zgaruvchilari
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8543327422:AAGmnW9mTBsMUsQD1pw8j4iwsh9vY3ms8_E")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") # Render panelida kiritiladi
-PORT = int(os.getenv("PORT", 8080))
-
-# Logging sozlamalari
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s — %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
-
-# Handlerlarni import qilish (Fayllaringiz mavjudligiga ishonch hosil qiling)
+# Handlerlarni import qilish
 try:
     from database import init_db
     from user_handlers import (
@@ -47,30 +30,41 @@ try:
         build_create_conv, build_add_admin_conv,
     )
 except ImportError as e:
-    logger.error(f"❌ Import xatosi: {e}. Fayllar to'liq yuklanganini tekshiring!")
+    print(f"❌ Import xatosi: {e}. Barcha .py fayllar mavjudligini tekshiring!")
     sys.exit(1)
 
-async def post_init(app: Application):
-    """Baza va buyruqlarni sozlash"""
-    await init_db()
-    logger.info("✅ Database tayyor.")
-    await app.bot.set_my_commands([
-        BotCommand("start",   "Botni boshlash"),
-        BotCommand("surveys", "Faol so'rovnomalar"),
-        BotCommand("about",   "Bot haqida"),
-        BotCommand("admin",   "Admin panel"),
-        BotCommand("cancel",  "Bekor qilish"),
-        BotCommand("skip",    "O'tkazib yuborish"),
-    ])
-    logger.info("✅ Bot buyruqlari sozlandi.")
+# Logging sozlamalari
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s — %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
-def main():
-    """Botni ishga tushirish qismi"""
+# Muhit o'zgaruvchilari
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8080))
+
+async def post_init(app: Application):
+    """Baza va menyuni sozlash"""
+    await init_db()
+    await app.bot.set_my_commands([
+        BotCommand("start", "Botni boshlash"),
+        BotCommand("surveys", "Faol so'rovnomalar"),
+        BotCommand("about", "Bot haqida"),
+        BotCommand("admin", "Admin panel"),
+    ])
+    logger.info("✅ Bot post_init muvaffaqiyatli yakunlandi.")
+
+async def main():
+    """Botni ishga tushirish (Python 3.10+ async uslubida)"""
+    
     if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN topilmadi!")
+        logger.error("❌ BOT_TOKEN muhit o'zgaruvchisi topilmadi!")
         return
 
-    # Application yaratish
+    # Application qurish
     app = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -78,64 +72,44 @@ def main():
         .build()
     )
 
-    # ── 1. ConversationHandlers ──
+    # --- Handlerlarni ro'yxatga olish ---
     app.add_handler(build_create_conv())
     app.add_handler(build_add_admin_conv())
-
-    # ── 2. Foydalanuvchi komandalar ──
-    app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("surveys", cmd_surveys))
-    app.add_handler(CommandHandler("about",   cmd_about))
-    app.add_handler(CommandHandler("admin",   cmd_admin))
-    app.add_handler(CommandHandler("cancel",  lambda u, c: None))
-
-    # ── 3. Maxsus MessageHandlerlar ──
+    app.add_handler(CommandHandler("about", cmd_about))
+    app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(MessageHandler(filters.Regex(r"^/s_\d+"), cmd_survey_link))
     app.add_handler(PollAnswerHandler(handle_poll_answer))
-
-    # ── 4. CallbackQueryHandlers (Ro'yxatdan o'tish) ──
+    
+    # Callbacklar
     app.add_handler(CallbackQueryHandler(cb_reg_faculty, pattern=r"^reg_fac:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_reg_course,  pattern=r"^reg_course:.+$"))
-    app.add_handler(CallbackQueryHandler(cb_reg_gender,  pattern=r"^reg_gender:.+$"))
-
-    # ── 5. CallbackQueryHandlers (User & Survey) ──
-    app.add_handler(CallbackQueryHandler(cb_sv_info,     pattern=r"^sv_info:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_sv_start,    pattern=r"^sv_start:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_sv_results,  pattern=r"^sv_results:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_sv_ai,       pattern=r"^sv_ai:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_sv_list,     pattern=r"^sv_list$"))
-
-    # ── 6. CallbackQueryHandlers (Admin panel) ──
-    app.add_handler(CallbackQueryHandler(cb_adm_home,        pattern=r"^adm_home$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_list,        pattern=r"^adm_list$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_survey,      pattern=r"^adm_sv:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_results,     pattern=r"^adm_res:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_close,       pattern=r"^adm_close:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_ai,          pattern=r"^adm_ai:\d+:(fast|deep)$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_ai_show,     pattern=r"^adm_ai_show:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_del_confirm, pattern=r"^adm_del_confirm:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_del_yes,      pattern=r"^adm_del_yes:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_stats,       pattern=r"^adm_stats$"))
-
-    # ── 7. CallbackQueryHandlers (Xabar yuborish va tahrirlash) ──
+    app.add_handler(CallbackQueryHandler(cb_reg_course, pattern=r"^reg_course:.+$"))
+    app.add_handler(CallbackQueryHandler(cb_reg_gender, pattern=r"^reg_gender:.+$"))
+    app.add_handler(CallbackQueryHandler(cb_sv_info, pattern=r"^sv_info:\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_sv_start, pattern=r"^sv_start:\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_sv_results, pattern=r"^sv_results:\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_sv_list, pattern=r"^sv_list$"))
+    
+    # Admin callbacklar
+    app.add_handler(CallbackQueryHandler(cb_adm_home, pattern=r"^adm_home$"))
+    app.add_handler(CallbackQueryHandler(cb_adm_list, pattern=r"^adm_list$"))
+    app.add_handler(CallbackQueryHandler(cb_adm_survey, pattern=r"^adm_sv:\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_adm_results, pattern=r"^adm_res:\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_adm_stats, pattern=r"^adm_stats$"))
     app.add_handler(CallbackQueryHandler(cb_adm_send_start, pattern=r"^adm_send_start:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_send_fac,       pattern=r"^send_fac:.+$"))
-    app.add_handler(CallbackQueryHandler(cb_send_course,    pattern=r"^send_course:.+$"))
-    app.add_handler(CallbackQueryHandler(cb_send_gender,    pattern=r"^send_gender:.+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_edit_questions, pattern=r"^adm_edit_qs:\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_adm_del_question,   pattern=r"^adm_del_q:\d+:\d+$"))
 
-    # ── 8. Menu va Matnli javoblar ──
+    # Admin Menu va Matnli javoblar
     app.add_handler(MessageHandler(
         filters.Regex(r"^(➕ Yangi So'rovnoma|📋 So'rovnomalar|📊 Statistika|✏️ Savollarni tahrirlash)$"),
         handle_admin_menu,
     ))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_answer))
 
-    # ── 🚀 Ishga tushirish ──
+    # --- Ishga tushirish tartibi ---
     if WEBHOOK_URL:
-        logger.info(f"🌐 Webhook rejimi faol: {WEBHOOK_URL}")
-        app.run_webhook(
+        logger.info(f"🌐 Webhook rejimida ishga tushmoqda: {WEBHOOK_URL}")
+        await app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
             url_path=BOT_TOKEN,
@@ -143,8 +117,17 @@ def main():
             drop_pending_updates=True
         )
     else:
-        logger.info("🔄 Polling rejimi faol...")
-        app.run_polling(drop_pending_updates=True)
+        logger.info("🔄 Polling rejimida ishga tushmoqda...")
+        # Pollingni async muhitda xavfsiz ishga tushirish
+        async with app:
+            await app.updater.start_polling(drop_pending_updates=True)
+            await app.start()
+            # Bot to'xtab qolmasligi uchun
+            await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    try:
+        # Python 3.10+ uchun asosiy ishga tushirish nuqtasi
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot to'xtatildi.")
