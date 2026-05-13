@@ -5,4 +5,4 @@ aiosqlite==0.21.0
 apscheduler==3.11.0
 httpx==0.28.1
 pytz==2025.1
-python-telegram-bot==20.x
+python-telegram-bot==21.10
